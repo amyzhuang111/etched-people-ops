@@ -1,0 +1,779 @@
+// Etched Talent Command Center — full relational data model.
+//
+// Everything here is illustrative demo data for a portfolio project —
+// never real Etched personnel, hiring, or candidate data. Verified
+// against etched.com: San Jose HQ + Taiwan factory + San Jose data
+// center, and six functions with a named public VP (ASIC, Architecture,
+// Platform, Software, Production, Finance — ASIC/Architecture actually
+// share one VP in reality). GTM/Operations/People/Other are illustrative
+// additions, not named on the public site.
+//
+// This replaces the earlier flattened schema with an event-sourced model:
+// pipeline history lives in ApplicationStageEvent (never inferred from
+// current stage alone), capability coverage is computed from Employee +
+// EmployeeCapability + MilestoneCapabilityRequirement, and every derived
+// metric (headcount, plan attainment, pipeline coverage, risk score) is
+// computed in src/lib/metrics + src/lib/risk from these raw tables — never
+// stored redundantly.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum EmployeeStatus {
+  ACTIVE
+  LEAVE
+  TERMINATED
+}
+
+enum SiteType {
+  HQ
+  FACTORY
+  DATA_CENTER
+  LAB
+  OFFICE
+  OTHER
+}
+
+enum CapabilityCategory {
+  CHIP
+  ARCHITECTURE
+  PLATFORM
+  SOFTWARE
+  PRODUCTION
+  SUPPLY_CHAIN
+  OPERATIONS
+  TALENT
+  GTM
+  FINANCE
+  OTHER
+}
+
+enum Priority {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum ScarcityLevel {
+  LOW
+  MEDIUM
+  HIGH
+  EXTREME
+}
+
+enum ProficiencyLevel {
+  WORKING
+  ADVANCED
+  EXPERT
+}
+
+enum MilestoneCategory {
+  SILICON
+  RACK
+  SOFTWARE
+  PRODUCTION
+  CUSTOMER
+  INFRASTRUCTURE
+  SCALE
+}
+
+enum MilestoneStatus {
+  NOT_STARTED
+  ON_TRACK
+  AT_RISK
+  BLOCKED
+  COMPLETED
+}
+
+enum RequisitionStatus {
+  DRAFT
+  APPROVED
+  OPEN
+  PAUSED
+  FILLED
+  CANCELLED
+}
+
+enum ApplicationSource {
+  SOURCED
+  REFERRAL
+  INBOUND
+  AGENCY
+  EVENT
+  OTHER
+}
+
+enum ApplicationStage {
+  PROSPECT
+  CONTACTED
+  SCREEN
+  TECHNICAL
+  ONSITE
+  EXECUTIVE
+  OFFER
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum ApplicationStatus {
+  ACTIVE
+  REJECTED
+  WITHDRAWN
+  HIRED
+}
+
+enum InterviewType {
+  RECRUITER
+  TECHNICAL
+  SYSTEM_DESIGN
+  ONSITE
+  EXECUTIVE
+  OTHER
+}
+
+enum InterviewRecommendation {
+  STRONG_YES
+  YES
+  MIXED
+  NO
+  STRONG_NO
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum OfferRiskType {
+  AGING
+  COMPETING_OFFER
+  RESPONSE_DELAY
+  START_DATE_DELAY
+  MANUAL_FLAG
+  OTHER
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum HmSlaType {
+  FEEDBACK_OVERDUE
+  DECISION_OVERDUE
+  INTERVIEW_SCHEDULING_DELAY
+  OFFER_APPROVAL_DELAY
+  REQ_KICKOFF_DELAY
+}
+
+enum SourceSystem {
+  ASHBY
+  HRIS
+  GOOGLE_SHEETS
+  NOTION
+  MANUAL
+  DEMO
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+enum AlertType {
+  CRITICAL_SEARCH
+  PIPELINE_STALL
+  OFFER_RISK
+  RECRUITER_OVERLOAD
+  HIRING_MANAGER_SLA
+  PLAN_GAP
+  MILESTONE_RISK
+  DATA_STALE
+  SYNC_FAILURE
+}
+
+enum RiskLevel {
+  LOW
+  MODERATE
+  HIGH
+  CRITICAL
+}
+
+enum UserRole {
+  ADMIN
+  HEAD_OF_TALENT
+  TALENT_OPS
+  RECRUITER
+  HIRING_MANAGER
+  FUNCTION_LEADER
+  EXECUTIVE
+  VIEWER
+}
+
+// ---------------------------------------------------------------------------
+// Org structure
+// ---------------------------------------------------------------------------
+
+model Function {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  slug             String   @unique
+  leaderEmployeeId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  employees    Employee[]
+  capabilities Capability[]
+  requisitions Requisition[]
+
+  @@index([slug])
+}
+
+model Site {
+  id        String   @id @default(cuid())
+  name      String
+  city      String
+  region    String
+  country   String
+  siteType  SiteType
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employees    Employee[]
+  requisitions Requisition[]
+}
+
+model Employee {
+  id             String         @id @default(cuid())
+  employeeNumber String         @unique
+  firstName      String
+  lastName       String
+  status         EmployeeStatus @default(ACTIVE)
+
+  functionId String
+  function   Function @relation(fields: [functionId], references: [id])
+  siteId     String?
+  site       Site?    @relation(fields: [siteId], references: [id])
+
+  jobTitle String
+  jobLevel String?
+
+  hireDate        DateTime
+  terminationDate DateTime?
+
+  managerEmployeeId String?
+
+  sourceSystem    SourceSystem @default(DEMO)
+  externalId      String?
+  sourceUpdatedAt DateTime?
+  lastSyncedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  capabilities EmployeeCapability[]
+
+  @@index([status])
+  @@index([functionId])
+  @@index([hireDate])
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities
+// ---------------------------------------------------------------------------
+
+model Capability {
+  id            String             @id @default(cuid())
+  name          String
+  functionId    String?
+  function      Function?          @relation(fields: [functionId], references: [id])
+  category      CapabilityCategory
+  criticality   Priority
+  scarcityLevel ScarcityLevel
+  description   String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  employeeCapabilities  EmployeeCapability[]
+  milestoneRequirements MilestoneCapabilityRequirement[]
+  requisitions          Requisition[]
+
+  @@index([functionId])
+}
+
+model EmployeeCapability {
+  id            String           @id @default(cuid())
+  employeeId    String
+  employee      Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  capabilityId  String
+  capability    Capability       @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+  proficiency   ProficiencyLevel
+  isPrimary     Boolean          @default(false)
+  effectiveFrom DateTime         @default(now())
+  effectiveTo   DateTime?
+  createdAt     DateTime         @default(now())
+
+  @@index([employeeId])
+  @@index([capabilityId])
+}
+
+// ---------------------------------------------------------------------------
+// Milestones
+// ---------------------------------------------------------------------------
+
+model Milestone {
+  id              String            @id @default(cuid())
+  name            String
+  description     String?
+  category        MilestoneCategory
+  targetDate      DateTime
+  status          MilestoneStatus   @default(ON_TRACK)
+  priority        Priority
+  ownerEmployeeId String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  capabilityRequirements MilestoneCapabilityRequirement[]
+  requisitions           Requisition[]
+
+  @@index([targetDate])
+  @@index([status])
+}
+
+model MilestoneCapabilityRequirement {
+  id                  String            @id @default(cuid())
+  milestoneId         String
+  milestone           Milestone         @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  capabilityId        String
+  capability          Capability        @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+  requiredHeadcount   Int
+  minimumHeadcount    Int
+  importanceWeight    Float
+  requiredProficiency ProficiencyLevel?
+  targetDate          DateTime
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([milestoneId])
+  @@index([capabilityId])
+}
+
+// ---------------------------------------------------------------------------
+// Workforce plan
+// ---------------------------------------------------------------------------
+
+model WorkforcePlanVersion {
+  id            String   @id @default(cuid())
+  name          String
+  effectiveDate DateTime
+  status        String   @default("ACTIVE")
+  createdBy     String?
+  createdAt     DateTime @default(now())
+
+  plans WorkforcePlan[]
+}
+
+model WorkforcePlan {
+  id            String               @id @default(cuid())
+  planVersionId String
+  planVersion   WorkforcePlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Cascade)
+
+  periodStart DateTime
+  periodEnd   DateTime
+
+  functionId   String?
+  capabilityId String?
+  siteId       String?
+
+  plannedHeadcount  Int
+  approvedHeadcount Int
+  budgetedHeadcount Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([planVersionId])
+  @@index([functionId])
+}
+
+// ---------------------------------------------------------------------------
+// Requisitions
+// ---------------------------------------------------------------------------
+
+model Requisition {
+  id        String @id @default(cuid())
+  reqNumber String @unique
+  title     String
+
+  functionId   String
+  function     Function   @relation(fields: [functionId], references: [id])
+  capabilityId String
+  capability   Capability @relation(fields: [capabilityId], references: [id])
+  siteId       String?
+  site         Site?      @relation(fields: [siteId], references: [id])
+
+  employmentType String @default("FULL_TIME")
+
+  priority Priority
+  status   RequisitionStatus @default(OPEN)
+
+  openings Int
+
+  openedAt       DateTime?
+  targetFillDate DateTime?
+  closedAt       DateTime?
+
+  hiringManagerEmployeeId String?
+  recruiterEmployeeId     String?
+
+  milestoneId String?
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id])
+
+  roleScarcity ScarcityLevel
+
+  sourceSystem    SourceSystem @default(DEMO)
+  externalId      String?
+  sourceUpdatedAt DateTime?
+  lastSyncedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applications Application[]
+  hires        Hire[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([capabilityId])
+  @@index([recruiterEmployeeId])
+  @@index([hiringManagerEmployeeId])
+  @@index([openedAt])
+  @@index([milestoneId])
+}
+
+// ---------------------------------------------------------------------------
+// Candidates / applications / pipeline history
+// ---------------------------------------------------------------------------
+
+model Candidate {
+  id             String       @id @default(cuid())
+  firstName      String
+  lastName       String
+  currentCompany String?
+  currentTitle   String?
+  location       String?
+  sourceSystem   SourceSystem @default(DEMO)
+  externalId     String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  applications Application[]
+  hires        Hire[]
+}
+
+model Application {
+  id            String      @id @default(cuid())
+  candidateId   String
+  candidate     Candidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  requisitionId String
+  requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+
+  source       ApplicationSource
+  currentStage ApplicationStage
+  status       ApplicationStatus @default(ACTIVE)
+
+  enteredPipelineAt  DateTime
+  lastStageChangedAt DateTime
+
+  qualityScore   Float?
+  technicalScore Float?
+
+  sourceSystem SourceSystem @default(DEMO)
+  externalId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stageEvents ApplicationStageEvent[]
+  interviews  Interview[]
+  offers      Offer[]
+  hire        Hire?
+
+  @@index([requisitionId])
+  @@index([candidateId])
+  @@index([currentStage])
+  @@index([status])
+}
+
+model ApplicationStageEvent {
+  id              String            @id @default(cuid())
+  applicationId   String
+  application     Application       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  fromStage       ApplicationStage?
+  toStage         ApplicationStage
+  occurredAt      DateTime
+  reason          String?
+  actorEmployeeId String?
+  createdAt       DateTime          @default(now())
+
+  @@index([applicationId])
+  @@index([occurredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Interviews / offers / hires
+// ---------------------------------------------------------------------------
+
+model Interview {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  type        InterviewType
+  scheduledAt DateTime
+  completedAt DateTime?
+
+  score          Float?
+  recommendation InterviewRecommendation?
+
+  feedbackSubmittedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([applicationId])
+  @@index([completedAt])
+}
+
+model Offer {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  offeredAt         DateTime
+  status            OfferStatus @default(PENDING)
+  respondedAt       DateTime?
+  expectedStartDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  riskEvents OfferRiskEvent[]
+  hire       Hire?
+
+  @@index([status])
+  @@index([offeredAt])
+  @@index([expectedStartDate])
+}
+
+model OfferRiskEvent {
+  id      String @id @default(cuid())
+  offerId String
+  offer   Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  riskType OfferRiskType
+  severity RiskSeverity
+
+  detectedAt DateTime
+  resolvedAt DateTime?
+
+  detailsJson Json?
+
+  createdAt DateTime @default(now())
+}
+
+model Hire {
+  id String @id @default(cuid())
+
+  applicationId String      @unique
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  requisitionId String
+  requisition   Requisition @relation(fields: [requisitionId], references: [id])
+  candidateId   String
+  candidate     Candidate   @relation(fields: [candidateId], references: [id])
+
+  acceptedAt DateTime
+  startDate  DateTime
+
+  employeeId String?
+
+  offerId String? @unique
+  offer   Offer?  @relation(fields: [offerId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([startDate])
+  @@index([requisitionId])
+}
+
+// ---------------------------------------------------------------------------
+// Recruiter capacity / hiring-manager SLA
+// ---------------------------------------------------------------------------
+
+model RecruiterCapacityPlan {
+  id                    String   @id @default(cuid())
+  recruiterEmployeeId   String
+  periodStart           DateTime
+  periodEnd             DateTime
+  targetWeightedReqLoad Float
+  targetP0ReqLoad       Float
+  targetScreensPerWeek  Float?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([recruiterEmployeeId])
+  @@index([periodStart, periodEnd])
+}
+
+model HiringManagerSlaEvent {
+  id                      String  @id @default(cuid())
+  hiringManagerEmployeeId String
+  requisitionId           String?
+  applicationId           String?
+
+  type          HmSlaType
+  detectedAt    DateTime
+  resolvedAt    DateTime?
+  durationHours Float?
+
+  severity RiskSeverity
+
+  createdAt DateTime @default(now())
+
+  @@index([hiringManagerEmployeeId])
+  @@index([type])
+}
+
+// ---------------------------------------------------------------------------
+// Integrations
+// ---------------------------------------------------------------------------
+
+model IntegrationSyncRun {
+  id           String       @id @default(cuid())
+  sourceSystem SourceSystem
+  entityType   String
+
+  startedAt   DateTime
+  completedAt DateTime?
+
+  status SyncStatus @default(RUNNING)
+
+  recordsRead    Int @default(0)
+  recordsCreated Int @default(0)
+  recordsUpdated Int @default(0)
+  recordsFailed  Int @default(0)
+
+  errorSummary String?
+
+  createdAt DateTime @default(now())
+
+  @@index([sourceSystem, entityType])
+  @@index([completedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Alerts
+// ---------------------------------------------------------------------------
+
+model Alert {
+  id         String       @id @default(cuid())
+  type       AlertType
+  severity   RiskSeverity
+  message    String
+  entityType String?
+  entityId   String?
+  dedupeKey  String       @unique
+  detectedAt DateTime     @default(now())
+  resolvedAt DateTime?
+  isRead     Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Scenario planner
+// ---------------------------------------------------------------------------
+
+model Scenario {
+  id              String   @id @default(cuid())
+  name            String
+  assumptionsJson Json
+  resultsJson     Json?
+  createdAt       DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Historical snapshots (run via `npm run snapshot`)
+// ---------------------------------------------------------------------------
+
+model WorkforceSnapshot {
+  id               String   @id @default(cuid())
+  snapshotDate     DateTime
+  functionId       String?
+  capabilityId     String?
+  siteId           String?
+  headcount        Int
+  plannedHeadcount Int
+  createdAt        DateTime @default(now())
+
+  @@index([snapshotDate])
+}
+
+model RecruitingSnapshot {
+  id                String   @id @default(cuid())
+  snapshotDate      DateTime
+  openRoles         Int
+  activeCandidates  Int
+  offersOutstanding Int
+  createdAt         DateTime @default(now())
+
+  @@index([snapshotDate])
+}
+
+model MilestoneCoverageSnapshot {
+  id               String   @id @default(cuid())
+  snapshotDate     DateTime
+  milestoneId      String
+  currentCoverage  Float
+  forecastCoverage Float
+  createdAt        DateTime @default(now())
+
+  @@index([snapshotDate])
+  @@index([milestoneId])
+}
+
+model RecruiterCapacitySnapshot {
+  id                  String   @id @default(cuid())
+  snapshotDate        DateTime
+  recruiterEmployeeId String
+  weightedLoad        Float
+  capacityTarget      Float
+  utilization         Float
+  createdAt           DateTime @default(now())
+
+  @@index([snapshotDate])
+  @@index([recruiterEmployeeId])
+}

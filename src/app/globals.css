@@ -1,26 +1,119 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-critical: var(--critical);
+  --color-warning: var(--warning);
+  --color-healthy: var(--healthy);
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.25);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/*
+ * Palette pulled directly from etched.com's shipped CSS (chunk
+ * 1sih227q_ggeh.css), not guessed:
+ *   --page-shell-bg: #ededed (light) / #000 (dark, body[data-theme=dark])
+ *   --off-bg: #1f1f1f (dark elevated) / #e4e4e4 (light elevated)
+ *   prose grays: #101828, #364153, #6a7282, #99a1af, #d1d5dc, #e5e7eb
+ *   accent red: #e40014 / #fb2c36
+ *   border overlays: #0000001a (black 10%) / #ffffff1a (white 10%)
+ *   border-radius: effectively 0 across the site (sharp corners)
+ * Applied here as a light app canvas (#ededed) with white cards, a
+ * true-black sidebar (matching Etched's own dark-mode shell), and the
+ * site's red reserved for critical/status accents only.
+ */
+
+:root {
+  --background: #ededed;
+  --foreground: #101828;
+  --card: #ffffff;
+  --card-foreground: #101828;
+  --popover: #ffffff;
+  --popover-foreground: #101828;
+  --primary: #101828;
+  --primary-foreground: #ffffff;
+  --secondary: #e4e4e4;
+  --secondary-foreground: #101828;
+  --muted: #e4e4e4;
+  --muted-foreground: #6a7282;
+  --accent: #e5e5e5;
+  --accent-foreground: #101828;
+  --destructive: #e40014;
+  --border: #0000001a;
+  --input: #0000001a;
+  --ring: #10182866;
+  --chart-1: #101828;
+  --chart-2: #4a5565;
+  --chart-3: #6a7282;
+  --chart-4: #99a1af;
+  --chart-5: #d1d5dc;
+  --critical: #e40014;
+  --warning: #b45309;
+  --healthy: #0f7b4f;
+  --radius: 0.1875rem;
+  --sidebar: #000000;
+  --sidebar-foreground: #d1d5dc;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1f1f1f;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #ffffff1a;
+  --sidebar-ring: #ffffff66;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
 }
