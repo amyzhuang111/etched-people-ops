@@ -47,11 +47,15 @@ export default function CandidatePipelinePage() {
   );
 
   // No auth in this demo, so "My Candidates" has no real logged-in user to
-  // filter by — pins to a stable (alphabetically-first) recruiter instead
-  // of a hardcoded name that may not exist in the current dataset.
+  // filter by — pins to whichever recruiter currently has the largest
+  // candidate load, so the view has something to show instead of landing
+  // on a recruiter between assignments. Ties broken alphabetically so the
+  // choice stays stable across reloads.
   const myRecruiter = useMemo(() => {
     const recruiters = data?.recruiters ?? [];
-    return [...recruiters].sort((a, b) => a.name.localeCompare(b.name))[0]?.name ?? null;
+    return (
+      [...recruiters].sort((a, b) => b.candidates - a.candidates || a.name.localeCompare(b.name))[0]?.name ?? null
+    );
   }, [data]);
 
   const filtered = useMemo(() => {

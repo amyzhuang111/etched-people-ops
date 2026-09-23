@@ -14,10 +14,11 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 
 import { TEAMS_BY_FUNCTION } from "@/data/reference";
-import { planAttainment, planGap } from "@/lib/formulas";
+import { planAttainment, planGap, formatSigned } from "@/lib/formulas";
 import { computePlanTotals } from "@/lib/plan-totals";
 import { useFilters } from "@/lib/filters";
 import { useAppData } from "@/lib/app-data";
+import { cn } from "@/lib/utils";
 import type { FunctionName } from "@/types";
 
 function statusFromAttainment(pct: number): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" {
@@ -262,8 +263,13 @@ function WorkforcePlanInner() {
                       <TableCell className="text-muted-foreground">{c.function}</TableCell>
                       <TableCell className="text-right tabular-nums">{c.needed}</TableCell>
                       <TableCell className="text-right tabular-nums">{c.current}</TableCell>
-                      <TableCell className="text-right tabular-nums text-critical">
-                        {c.current - c.needed}
+                      <TableCell
+                        className={cn(
+                          "text-right tabular-nums",
+                          c.current - c.needed < 0 ? "text-critical" : "text-healthy",
+                        )}
+                      >
+                        {formatSigned(c.current - c.needed)}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{c.scarcity}</TableCell>
                       <TableCell className="text-muted-foreground">{c.criticality}</TableCell>
